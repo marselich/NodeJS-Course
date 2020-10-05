@@ -1,29 +1,67 @@
-const { program } = require('commander');
-const { fs } = require('fs');
+const commander = require('commander');
+const { pipeline } = require('stream');
+const fs = require('fs');
+const { Transform } = require('readable-stream');
+const { caesarCipherConverter } = require('./caesarCipher');
 
+commander.storeOptionsAsProperties();
 
-function myParseInt(value, dummyPrevious) {
-    // parseInt takes a string and an optional radix
-    return parseInt(value);
+commander
+    .option('-s, --shift <value>', 'output extra debugging')
+    .option('-i, --input <filename>', 'small pizza size')
+    .option('-o, --output <filename>', 'flavour of pizza')
+    .option('-a, --action <encode|decode>', 'flavour of pizza');
+
+commander.parse(process.argv);
+
+if(typeof commander.action !== 'function') {
+    if(!commander.shift) {
+        console.error("Error: no shift");
+        process.exit(1);
+    }
+    if(!commander.input) {
+        process.stdin.on('readable', () => {
+            let inputFileName = process.stdin.read().toString();
+            inputFileName = inputFileName.substr(0, inputFileName.length-2);
+            process.stdout.write(`Input filename: ${inputFileName.length}`);
+            sendPipeline(inputFileName);
+        });
+    }
+    else {
+        sendPipeline(commander.input);
+    }
+    function sendPipeline(readFrom) {
+        if(!fs.existsSync(readFrom)) {
+            console.error("Error: file not found " + readFrom);
+            process.exit(1);
+        }
+        pipeline(
+            fs.createReadStream(readFrom, "utf8"),
+            new Transform({
+                transform(chunk, enc, callback) {
+                    this.push(
+                        caesarCipherConverter(chunk.toString('utf8'), parseInt(commander.shift), commander.action)
+                    );
+                    callback();
+                }
+            }),
+            fs.createWriteStream(typeof commander.output !== 'undefined' ? commander.output : process.stdout, {
+                'flags': 'a',
+                'encoding': null,
+                'mode': 0666
+            }),
+            (err) => {
+                if(err) {
+                    console.error(err);
+                }
+                else {
+                    console.log("Good");
+                }
+            }
+        );
+    }
 }
-
-program
-    .option('-s, --shift <number>', 'a shift in cipher', myParseInt)
-    .option('-a, --action [type]', 'an action encode/decode')
-    .option('-i, --input [fileUrl]', 'an input file')
-    .option('-o, --output [fileUrl]', 'an output file')
-;
-
-program.parse(process.argv);
-
-
-
-if(program.action === 'encode') {
-
+else {
+    console.error("Error: no action");
+    process.exit(1);
 }
-
-//node my_caesar_cli -a encode -s 7 -i "./input.txt" -o "./output.txt"
-
-if (program.cheese === undefined) console.log('no cheese');
-else if (program.cheese === true) console.log('add cheese');
-else console.log(`add cheese type ${program.cheese}`);
